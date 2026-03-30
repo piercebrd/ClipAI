@@ -1,8 +1,24 @@
 import os
+import shutil
 import uuid
 import yt_dlp
 
-from app.config import TEMP_DIR, MAX_VIDEO_DURATION
+from app.config import TEMP_DIR, MAX_VIDEO_DURATION, YTDLP_COOKIES_FROM_BROWSER
+
+def _ensure_node_in_path() -> None:
+    """Add Node.js to PATH if not already accessible (needed for yt-dlp EJS solver)."""
+    if shutil.which("node"):
+        return
+    # Common nvm path on macOS
+    nvm_default = os.path.expanduser("~/.nvm/versions/node")
+    if os.path.isdir(nvm_default):
+        try:
+            versions = sorted(os.listdir(nvm_default), reverse=True)
+            if versions:
+                node_bin = os.path.join(nvm_default, versions[0], "bin")
+                os.environ["PATH"] = node_bin + os.pathsep + os.environ.get("PATH", "")
+        except OSError:
+            pass
 
 
 def _make_job_dir(job_id: str) -> str:
@@ -12,6 +28,7 @@ def _make_job_dir(job_id: str) -> str:
 
 
 def download_video(url: str, job_id: str) -> dict:
+    _ensure_node_in_path()
     """
     Download a YouTube video and extract audio.
     Returns a dict with:
@@ -31,6 +48,8 @@ def download_video(url: str, job_id: str) -> dict:
         "quiet": True,
         "no_warnings": True,
         "match_filter": _duration_filter,
+        "cookiesfrombrowser": (YTDLP_COOKIES_FROM_BROWSER,),
+        "js_runtimes": {"node": {}, "deno": {}},
         # Extract audio as WAV for Whisper
         "postprocessors": [
             {
