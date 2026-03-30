@@ -87,8 +87,21 @@ if [ "$STEP" = "transcribed" ]; then
   WORD_COUNT=$(echo "$JOB" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('words', [])))")
   LANG=$(echo "$JOB" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('language', '?'))")
   pass "Transcription complète: $WORD_COUNT mots, langue=$LANG"
-elif [ "$STEP" = "analyzed" ] || [ "$STEP" = "done" ]; then
-  pass "Pipeline complet: $STEP"
+elif [ "$STEP" = "analyzed" ]; then
+  WORD_COUNT=$(echo "$JOB" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('words', [])))")
+  LANG=$(echo "$JOB" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('language', '?'))")
+  CLIP_COUNT=$(echo "$JOB" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('clips', [])))")
+  TOP_SCORE=$(echo "$JOB" | python3 -c "import sys,json; d=json.load(sys.stdin); clips=d.get('clips',[]); print(clips[0]['score'] if clips else 0)")
+  pass "Transcription: $WORD_COUNT mots ($LANG)"
+  pass "Claude: $CLIP_COUNT clips détectés (meilleur score: $TOP_SCORE)"
+  echo "$JOB" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+for c in d.get('clips', [])[:3]:
+    print(f\"  [{c['score']}] {c['title']} ({c['start']}s→{c['end']}s) [{c['type']}]\")
+"
+elif [ "$STEP" = "done" ]; then
+  pass "Pipeline complet"
 else
   fail "Timeout — dernière étape: $STEP ($MSG)"
 fi

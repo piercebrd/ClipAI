@@ -4,7 +4,9 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from app.schemas import AnalyzeRequest, AnalyzeResponse
 from app.services.downloader import download_video
 from app.services.transcriber import transcribe
+from app.services.claude_analyzer import analyze_transcript
 from app.utils.jobs import create_job, update_job, get_job
+from app.utils.cleanup import schedule_cleanup
 
 router = APIRouter()
 
@@ -30,11 +32,8 @@ def _run_pipeline(job_id: str, url: str):
         # Step 1 — Download
         update_job(job_id, step="downloading", progress=10, message="Downloading video...")
         result = download_video(url, job_id)
-
         update_job(
-            job_id,
-            step="downloaded",
-            progress=30,
+            job_id, step="downloaded", progress=30,
             message=f"Downloaded: {result['title']} ({result['duration']}s)",
             video_path=result["video_path"],
             audio_path=result["audio_path"],
@@ -45,11 +44,8 @@ def _run_pipeline(job_id: str, url: str):
         # Step 2 — Transcribe
         update_job(job_id, step="transcribing", progress=40, message="Transcribing audio...")
         words, language = transcribe(result["audio_path"])
-
         update_job(
-            job_id,
-            step="transcribed",
-            progress=60,
+            job_id, step="transcribed", progress=60,
             message=f"Transcribed {len(words)} words ({language})",
             video_path=result["video_path"],
             audio_path=result["audio_path"],
@@ -58,6 +54,24 @@ def _run_pipeline(job_id: str, url: str):
             words=words,
             language=language,
         )
+
+        # Step 3 — Claude analysis
+        update_job(job_id, step="analyzing", progress=70, message="Analyzing with Claude...")
+        clips = analyze_transcript(words, result["duration"], result["title"])
+        update_job(
+            job_id, step="analyzed", progress=90,
+            message=f"Found {len(clips)} viral clips",
+            video_path=result["video_path"],
+            audio_path=result["audio_path"],
+            duration=result["duration"],
+            title=result["title"],
+            words=words,
+            language=language,
+            clips=clips,
+        )
+
+        # Schedule temp file cleanup after TTL
+        schedule_cleanup(job_id)
 
     except Exception as e:
         update_job(job_id, step="error", progress=0, message=str(e))

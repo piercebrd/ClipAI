@@ -1,16 +1,14 @@
-from pydantic import BaseModel, HttpUrl
-from typing import Optional
+from pydantic import BaseModel
 
 
 class AnalyzeRequest(BaseModel):
     url: str
 
 
-class JobStatus(BaseModel):
-    job_id: str
-    step: str
-    progress: int
-    message: str
+class WordSchema(BaseModel):
+    word: str
+    start: float
+    end: float
 
 
 class ClipSchema(BaseModel):
@@ -21,9 +19,24 @@ class ClipSchema(BaseModel):
     type: str
     score: int
     reason: str
-    subtitles: list
+    subtitles: list[WordSchema]
 
 
 class AnalyzeResponse(BaseModel):
     job_id: str
     clips: list[ClipSchema] = []
+
+
+class RenderClipInput(BaseModel):
+    id: str
+    start: float
+    end: float
+
+
+class RenderRequest(BaseModel):
+    job_id: str
+    clips: list[RenderClipInput]
+
+
+class RenderResponse(BaseModel):
+    render_id: str
