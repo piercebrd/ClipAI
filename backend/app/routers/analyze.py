@@ -3,6 +3,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from app.schemas import AnalyzeRequest, AnalyzeResponse
 from app.services.downloader import download_video
+from app.services.transcriber import transcribe
 from app.utils.jobs import create_job, update_job, get_job
 
 router = APIRouter()
@@ -39,6 +40,23 @@ def _run_pipeline(job_id: str, url: str):
             audio_path=result["audio_path"],
             duration=result["duration"],
             title=result["title"],
+        )
+
+        # Step 2 — Transcribe
+        update_job(job_id, step="transcribing", progress=40, message="Transcribing audio...")
+        words, language = transcribe(result["audio_path"])
+
+        update_job(
+            job_id,
+            step="transcribed",
+            progress=60,
+            message=f"Transcribed {len(words)} words ({language})",
+            video_path=result["video_path"],
+            audio_path=result["audio_path"],
+            duration=result["duration"],
+            title=result["title"],
+            words=words,
+            language=language,
         )
 
     except Exception as e:
