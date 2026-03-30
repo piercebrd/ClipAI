@@ -2,7 +2,7 @@ import os
 import uuid
 import yt_dlp
 
-from app.config import TEMP_DIR, MAX_VIDEO_DURATION
+from app.config import TEMP_DIR, MAX_VIDEO_DURATION, YTDLP_COOKIES_FROM_BROWSER
 
 
 def _make_job_dir(job_id: str) -> str:
@@ -31,6 +31,7 @@ def download_video(url: str, job_id: str) -> dict:
         "quiet": True,
         "no_warnings": True,
         "match_filter": _duration_filter,
+        "cookiesfrombrowser": (YTDLP_COOKIES_FROM_BROWSER,),
         # Extract audio as WAV for Whisper
         "postprocessors": [
             {
