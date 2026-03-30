@@ -9,10 +9,10 @@ FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 
 TARGET_W = 1080
 TARGET_H = 1920
-FONT_SIZE = 52
+FONT_SIZE = 42
 FONT_COLOR = "white"
 SHADOW_COLOR = "black"
-SUB_Y_RATIO = 0.80  # 80% down the screen
+SUB_Y_RATIO = 0.75  # 75% down the screen
 
 
 def render_clip(job_id: str, clip: dict) -> str:
@@ -36,7 +36,7 @@ def render_clip(job_id: str, clip: dict) -> str:
     crop_scale = _build_crop_scale(src_w, src_h)
 
     # Build drawtext subtitle filters if supported
-    blocks = _group_words(subtitles, min_words=5, max_words=8)
+    blocks = _group_words(subtitles, min_words=3, max_words=5)
     drawtext_filters = _build_drawtext_filters(blocks, start) if _has_drawtext() else []
 
     vf_parts = [crop_scale] + drawtext_filters
@@ -50,7 +50,7 @@ def render_clip(job_id: str, clip: dict) -> str:
         "-vf", vf,
         "-c:v", "libx264",
         "-crf", "23",
-        "-preset", "fast",
+        "-preset", "ultrafast",
         "-c:a", "aac",
         "-ar", "44100",
         "-movflags", "+faststart",
