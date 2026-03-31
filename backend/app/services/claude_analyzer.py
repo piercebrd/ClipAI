@@ -1,4 +1,5 @@
 import json
+import time
 import uuid
 import httpx
 
@@ -102,9 +103,15 @@ def analyze_transcript(
         "messages": [{"role": "user", "content": prompt}],
     }
 
-    with httpx.Client(timeout=60) as client:
-        response = client.post(CLAUDE_API_URL, headers=headers, json=payload)
-        response.raise_for_status()
+    max_retries = 3
+    with httpx.Client(timeout=90) as client:
+        for attempt in range(max_retries):
+            response = client.post(CLAUDE_API_URL, headers=headers, json=payload)
+            if response.status_code == 529 and attempt < max_retries - 1:
+                time.sleep(2 ** attempt * 5)  # 5s, 10s, 20s
+                continue
+            response.raise_for_status()
+            break
 
     raw = response.json()["content"][0]["text"].strip()
 
