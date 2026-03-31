@@ -65,11 +65,17 @@ def render_clip(job_id: str, clip: dict) -> str:
 
 # ── Capability check ─────────────────────────────────────────────
 
+_drawtext_supported: bool | None = None
+
+
 def _has_drawtext() -> bool:
-    result = subprocess.run(
-        [FFMPEG, "-filters"], capture_output=True, text=True
-    )
-    return "drawtext" in result.stdout or "drawtext" in result.stderr
+    global _drawtext_supported
+    if _drawtext_supported is None:
+        result = subprocess.run(
+            [FFMPEG, "-filters"], capture_output=True, text=True
+        )
+        _drawtext_supported = "drawtext" in result.stdout or "drawtext" in result.stderr
+    return _drawtext_supported
 
 
 # ── Subtitle blocks ───────────────────────────────────────────────
