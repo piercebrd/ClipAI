@@ -18,6 +18,7 @@ async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
     background_tasks.add_task(
         _run_pipeline, job_id, request.url,
         request.prompt, request.min_duration, request.max_duration,
+        request.mode,
     )
     return AnalyzeResponse(job_id=job_id, clips=[])
 
@@ -35,6 +36,7 @@ def _run_pipeline(
     user_prompt: str | None = None,
     min_duration: int = 15,
     max_duration: int = 90,
+    mode: str = "viral",
 ):
     try:
         # Step 1 — Download
@@ -63,15 +65,19 @@ def _run_pipeline(
             language=language,
         )
 
-        # Step 3 — Claude analysis
-        update_job(job_id, step="analyzing", progress=70, message="Analyzing with Claude...")
-        clips = analyze_transcript(
-            words, result["duration"], result["title"],
-            user_prompt, min_duration, max_duration,
-        )
+        # Step 3 — Clip detection
+        if mode == "sequential":
+            update_job(job_id, step="analyzing", progress=70, message="Splitting video sequentially...")
+            clips = _split_sequential(words, result["duration"], max_duration)
+        else:
+            update_job(job_id, step="analyzing", progress=70, message="Analyzing with Claude...")
+            clips = analyze_transcript(
+                words, result["duration"], result["title"],
+                user_prompt, min_duration, max_duration,
+            )
         update_job(
             job_id, step="analyzed", progress=90,
-            message=f"Found {len(clips)} viral clips",
+            message=f"{len(clips)} clips {'découpés' if mode == 'sequential' else 'détectés'}",
             video_path=result["video_path"],
             audio_path=result["audio_path"],
             duration=result["duration"],
@@ -86,3 +92,44 @@ def _run_pipeline(
 
     except Exception as e:
         update_job(job_id, step="error", progress=0, message=str(e))
+
+
+def _split_sequential(words: list[dict], duration: float, clip_duration: int) -> list[dict]:
+    """Split the entire video into sequential clips of clip_duration seconds."""
+    clips = []
+    start = 0.0
+    index = 1
+
+    while start < duration:
+        end = min(start + clip_duration, duration)
+
+        # Skip tiny leftover segments (< 3s)
+        if end - start < 3 and clips:
+            clips[-1]["end"] = end
+            # Extend subtitles of last clip
+            clips[-1]["subtitles"] = [
+                w for w in words
+                if w["start"] >= clips[-1]["start"] - 0.5 and w["end"] <= end + 0.5
+            ]
+            break
+
+        subtitles = [
+            w for w in words
+            if w["start"] >= start - 0.5 and w["end"] <= end + 0.5
+        ]
+
+        clips.append({
+            "id": str(uuid.uuid4()),
+            "title": f"Partie {index}",
+            "start": start,
+            "end": end,
+            "type": "highlight",
+            "score": 0,
+            "reason": f"{int(start)}s - {int(end)}s",
+            "subtitles": subtitles,
+        })
+
+        start = end
+        index += 1
+
+    return clips

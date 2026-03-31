@@ -10,7 +10,7 @@ const TYPE_COLORS = {
 
 const FORMAT_OPTIONS = [
   { value: 'portrait', label: 'Portrait 9:16' },
-  { value: 'landscape_blur', label: 'Paysage flou' },
+  { value: 'landscape_blur', label: '16:9 + flou' },
   { value: 'square', label: 'Carré 1:1' },
   { value: 'original', label: 'Original' },
 ]

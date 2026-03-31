@@ -8,6 +8,7 @@ class AnalyzeRequest(BaseModel):
     prompt: str | None = None
     min_duration: int = 15
     max_duration: int = 90
+    mode: Literal["viral", "sequential"] = "viral"
 
 
 class WordSchema(BaseModel):
