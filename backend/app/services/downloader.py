@@ -82,6 +82,7 @@ def download_video(url: str, job_id: str) -> dict:
         "no_warnings": True,
         "match_filter": _duration_filter,
         **_cookies_opt(),
+        "extractor_args": {"youtube": {"player_client": ["mediaconnect"]}},
         "js_runtimes": {"node": {}, "deno": {}},
         # Extract audio as WAV for Whisper
         "postprocessors": [
