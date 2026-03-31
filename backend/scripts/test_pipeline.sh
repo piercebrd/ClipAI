@@ -100,6 +100,44 @@ d = json.load(sys.stdin)
 for c in d.get('clips', [])[:3]:
     print(f\"  [{c['score']}] {c['title']} ({c['start']}s→{c['end']}s) [{c['type']}]\")
 "
+
+  # ── 6. Test render (premier clip seulement) ──────────────────
+  info "Test rendu FFmpeg (clip 1)..."
+  FIRST_CLIP=$(echo "$JOB" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+c = d['clips'][0]
+print(c['id'], c['start'], c['end'])
+")
+  CLIP_ID=$(echo "$FIRST_CLIP" | awk '{print $1}')
+  CLIP_START=$(echo "$FIRST_CLIP" | awk '{print $2}')
+  CLIP_END=$(echo "$FIRST_CLIP" | awk '{print $3}')
+
+  RENDER_RESP=$(curl -sf -X POST "$BASE/render" \
+    -H "Content-Type: application/json" \
+    -d "{\"job_id\": \"$JOB_ID\", \"clips\": [{\"id\": \"$CLIP_ID\", \"start\": $CLIP_START, \"end\": $CLIP_END}]}")
+  RENDER_ID=$(echo "$RENDER_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['render_id'])")
+  [ -n "$RENDER_ID" ] && pass "Render lancé: $RENDER_ID" || fail "Pas de render_id"
+
+  # Poll render status
+  R_ELAPSED=0
+  while [ $R_ELAPSED -lt 120 ]; do
+    RJOB=$(curl -sf "$BASE/render/status/$RENDER_ID")
+    RSTEP=$(echo "$RJOB" | python3 -c "import sys,json; print(json.load(sys.stdin)['step'])")
+    RMSG=$(echo "$RJOB" | python3 -c "import sys,json; print(json.load(sys.stdin)['message'])")
+    [ "$RSTEP" = "done" ] && break
+    echo "  [render] $RMSG"
+    sleep 3
+    R_ELAPSED=$((R_ELAPSED + 3))
+  done
+
+  RFILES=$(echo "$RJOB" | python3 -c "import sys,json; print(json.load(sys.stdin).get('files','[]'))")
+  if [ "$RSTEP" = "done" ]; then
+    pass "FFmpeg rendu OK — fichiers: $RFILES"
+  else
+    fail "Render timeout ou erreur: $RMSG"
+  fi
+
 elif [ "$STEP" = "done" ]; then
   pass "Pipeline complet"
 else

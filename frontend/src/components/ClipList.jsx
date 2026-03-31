@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import API_URL from '../api'
 
 const TYPE_COLORS = {
   hook: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
@@ -51,7 +52,7 @@ function ClipCard({ clip, jobId }) {
     setProgress(0)
 
     try {
-      const res = await fetch('/render', {
+      const res = await fetch(`${API_URL}/render`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -84,14 +85,14 @@ function ClipCard({ clip, jobId }) {
       await sleep(3000)
       elapsed += 3
 
-      const res = await fetch(`/render/status/${renderId}`)
+      const res = await fetch(`${API_URL}/render/status/${renderId}`)
       if (!res.ok) continue
       const data = await res.json()
 
       if (data.progress != null) setProgress(data.progress)
 
       if (data.step === 'done') {
-        setDownloadUrl(`/download/${renderId}/${clipId}`)
+        setDownloadUrl(`${API_URL}/download/${renderId}/${clipId}`)
         setRenderState('done')
         return
       }
