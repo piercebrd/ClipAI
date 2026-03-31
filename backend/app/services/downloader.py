@@ -5,6 +5,16 @@ import yt_dlp
 
 from app.config import TEMP_DIR, MAX_VIDEO_DURATION, YTDLP_COOKIES_FROM_BROWSER
 
+COOKIES_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cookies.txt")
+
+
+def _write_cookies_from_env():
+    """Write YTDLP_COOKIES env var content to a file for yt-dlp."""
+    raw = os.getenv("YTDLP_COOKIES", "")
+    if raw and not os.path.exists(COOKIES_FILE):
+        with open(COOKIES_FILE, "w") as f:
+            f.write(raw)
+
 def _ensure_node_in_path() -> None:
     """Add Node.js to PATH if not already accessible (needed for yt-dlp EJS solver)."""
     if shutil.which("node"):
@@ -25,6 +35,16 @@ def _make_job_dir(job_id: str) -> str:
     job_dir = os.path.join(TEMP_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
     return job_dir
+
+
+def _cookies_opt() -> dict:
+    """Return yt-dlp cookies option depending on available config."""
+    _write_cookies_from_env()
+    if os.path.exists(COOKIES_FILE):
+        return {"cookiefile": COOKIES_FILE}
+    if YTDLP_COOKIES_FROM_BROWSER:
+        return {"cookiesfrombrowser": (YTDLP_COOKIES_FROM_BROWSER,)}
+    return {}
 
 
 def download_video(url: str, job_id: str) -> dict:
@@ -48,7 +68,7 @@ def download_video(url: str, job_id: str) -> dict:
         "quiet": True,
         "no_warnings": True,
         "match_filter": _duration_filter,
-        **({"cookiesfrombrowser": (YTDLP_COOKIES_FROM_BROWSER,)} if YTDLP_COOKIES_FROM_BROWSER else {}),
+        **_cookies_opt(),
         "js_runtimes": {"node": {}, "deno": {}},
         # Extract audio as WAV for Whisper
         "postprocessors": [
