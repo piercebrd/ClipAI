@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import API_URL from '../api'
 
 const STEP_LABELS = {
   downloading: 'Téléchargement',
@@ -18,7 +19,7 @@ export default function JobStatus({ jobId, onJobUpdate }) {
 
     async function poll() {
       try {
-        const res = await fetch(`/status/${jobId}`)
+        const res = await fetch(`${API_URL}/status/${jobId}`)
         if (!res.ok) return
         const data = await res.json()
         if (active) onJobUpdate(data)

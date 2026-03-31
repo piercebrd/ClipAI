@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import API_URL from '../api'
 
 export default function UrlForm({ onJobCreated }) {
   const [url, setUrl] = useState('')
@@ -24,7 +25,7 @@ export default function UrlForm({ onJobCreated }) {
       if (!isSequential && minDuration !== 15) body.min_duration = minDuration
       if (maxDuration !== 90) body.max_duration = maxDuration
 
-      const res = await fetch('/analyze', {
+      const res = await fetch(`${API_URL}/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
