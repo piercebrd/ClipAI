@@ -103,12 +103,12 @@ def analyze_transcript(
         "messages": [{"role": "user", "content": prompt}],
     }
 
-    max_retries = 3
-    with httpx.Client(timeout=90) as client:
+    max_retries = 5
+    with httpx.Client(timeout=120) as client:
         for attempt in range(max_retries):
             response = client.post(CLAUDE_API_URL, headers=headers, json=payload)
-            if response.status_code == 529 and attempt < max_retries - 1:
-                time.sleep(2 ** attempt * 5)  # 5s, 10s, 20s
+            if response.status_code in (429, 529) and attempt < max_retries - 1:
+                time.sleep(2 ** attempt * 10)  # 10s, 20s, 40s, 80s
                 continue
             response.raise_for_status()
             break
