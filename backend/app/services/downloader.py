@@ -75,7 +75,7 @@ def download_video(url: str, job_id: str) -> dict:
     audio_path = os.path.join(job_dir, "audio.wav")
 
     ydl_opts = {
-        "format": "bestvideo+bestaudio/best",
+        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
         "outtmpl": video_path,
         "merge_output_format": "mp4",
         "quiet": True,
