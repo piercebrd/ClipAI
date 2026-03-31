@@ -7,20 +7,51 @@ from app.config import TEMP_DIR
 
 FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 
-TARGET_W = 1080
-TARGET_H = 1920
-FONT_SIZE = 52
-FONT_COLOR = "white"
-SHADOW_COLOR = "black"
-SUB_Y_RATIO = 0.80  # 80% down the screen
+FORMATS = {
+    "portrait":       (1080, 1920),
+    "landscape_blur": (1080, 1920),
+    "square":         (1080, 1080),
+    "original":       None,
+}
+
+SUBTITLE_STYLES = {
+    "tiktok": {
+        "fontsize": 52,
+        "fontcolor": "white",
+        "shadowcolor": "black",
+        "shadowx": 2,
+        "shadowy": 2,
+        "box": 1,
+        "boxcolor": "black@0.4",
+        "boxborderw": 8,
+        "y_ratio": 0.80,
+    },
+    "minimal": {
+        "fontsize": 36,
+        "fontcolor": "white",
+        "shadowcolor": "black",
+        "shadowx": 1,
+        "shadowy": 1,
+        "box": 0,
+        "boxcolor": "black@0.0",
+        "boxborderw": 0,
+        "y_ratio": 0.85,
+    },
+}
 
 
-def render_clip(job_id: str, clip: dict) -> str:
+def render_clip(
+    job_id: str,
+    clip: dict,
+    fmt: str = "portrait",
+    subtitle_style: str = "tiktok",
+) -> str:
     """
-    Render a single clip: trim → crop/scale to 9:16 → burn subtitles.
+    Render a single clip: trim -> crop/scale -> burn subtitles.
     Returns the path to the output MP4.
     """
     job_dir = os.path.join(TEMP_DIR, job_id)
+    video_path = os.path.join(job_dir, "video.mp4")
 
     clip_id = clip["id"]
     start = float(clip["start"])
@@ -30,22 +61,33 @@ def render_clip(job_id: str, clip: dict) -> str:
     out_path = os.path.join(job_dir, f"{clip_id}.mp4")
 
     # Probe source dimensions
-    src_w, src_h = _probe_dimensions(os.path.join(job_dir, "video.mp4"))
+    src_w, src_h = _probe_dimensions(video_path)
+
+    # Resolve target dimensions
+    if fmt == "original":
+        target_w, target_h = src_w, src_h
+    else:
+        target_w, target_h = FORMATS[fmt]
 
     # Build crop/scale filter
-    crop_scale = _build_crop_scale(src_w, src_h)
+    crop_scale = _build_crop_scale(src_w, src_h, target_w, target_h, fmt)
 
-    # Build drawtext subtitle filters if supported
-    blocks = _group_words(subtitles, min_words=5, max_words=8)
-    drawtext_filters = _build_drawtext_filters(blocks, start) if _has_drawtext() else []
+    # Build subtitle filters
+    vf_parts = [crop_scale]
+    if subtitle_style != "none" and _has_drawtext():
+        style = SUBTITLE_STYLES[subtitle_style]
+        blocks = _group_words(subtitles, min_words=3, max_words=5)
+        # For landscape_blur, compute where the video actually sits
+        sub_y = _compute_subtitle_y(src_w, src_h, target_w, target_h, fmt, style)
+        drawtext_filters = _build_drawtext_filters(blocks, start, target_w, sub_y, style)
+        vf_parts += drawtext_filters
 
-    vf_parts = [crop_scale] + drawtext_filters
     vf = ",".join(vf_parts)
 
     cmd = [
         FFMPEG, "-y",
         "-ss", str(start),
-        "-i", os.path.join(job_dir, "video.mp4"),
+        "-i", video_path,
         "-t", str(duration),
         "-vf", vf,
         "-c:v", "libx264",
@@ -63,7 +105,7 @@ def render_clip(job_id: str, clip: dict) -> str:
     return out_path
 
 
-# ── Capability check ─────────────────────────────────────────────
+# -- Capability check ---------------------------------------------------------
 
 _drawtext_supported: bool | None = None
 
@@ -78,7 +120,7 @@ def _has_drawtext() -> bool:
     return _drawtext_supported
 
 
-# ── Subtitle blocks ───────────────────────────────────────────────
+# -- Subtitle blocks ----------------------------------------------------------
 
 def _group_words(words: list[dict], min_words: int, max_words: int) -> list[list[dict]]:
     blocks, current = [], []
@@ -93,10 +135,33 @@ def _group_words(words: list[dict], min_words: int, max_words: int) -> list[list
     return blocks
 
 
-def _build_drawtext_filters(blocks: list[list[dict]], clip_start: float) -> list[str]:
+def _compute_subtitle_y(
+    src_w: int, src_h: int,
+    target_w: int, target_h: int,
+    fmt: str, style: dict,
+) -> int:
+    """Compute subtitle Y position, accounting for video placement in the frame."""
+    if fmt == "landscape_blur":
+        # Video is scaled to fit width, centered vertically
+        src_ratio = src_w / src_h
+        video_h = int(target_w / src_ratio)
+        video_y = (target_h - video_h) // 2
+        # Place subtitles at y_ratio within the VIDEO area, not the full frame
+        return video_y + int(video_h * style["y_ratio"])
+    return int(target_h * style["y_ratio"])
+
+
+def _build_drawtext_filters(
+    blocks: list[list[dict]],
+    clip_start: float,
+    target_w: int,
+    sub_y: int,
+    style: dict,
+) -> list[str]:
     """Build one drawtext filter per subtitle block."""
     filters = []
-    y = int(TARGET_H * SUB_Y_RATIO)
+    # Clamp fontsize so text doesn't overflow width (roughly 0.6 * fontsize per char)
+    fontsize = min(style["fontsize"], int(target_w / 20))
 
     for block in blocks:
         if not block:
@@ -116,12 +181,13 @@ def _build_drawtext_filters(blocks: list[list[dict]], clip_start: float) -> list
         f = (
             f"drawtext="
             f"text='{text_escaped}':"
-            f"fontsize={FONT_SIZE}:"
-            f"fontcolor={FONT_COLOR}:"
-            f"shadowcolor={SHADOW_COLOR}:shadowx=2:shadowy=2:"
-            f"x=(w-text_w)/2:"
-            f"y={y}:"
-            f"box=1:boxcolor=black@0.4:boxborderw=8:"
+            f"fontsize={fontsize}:"
+            f"fontcolor={style['fontcolor']}:"
+            f"shadowcolor={style['shadowcolor']}:"
+            f"shadowx={style['shadowx']}:shadowy={style['shadowy']}:"
+            f"x=max(10\\,(w-text_w)/2):"
+            f"y={sub_y}:"
+            f"box={style['box']}:boxcolor={style['boxcolor']}:boxborderw={style['boxborderw']}:"
             f"enable='between(t\\,{t_start:.3f}\\,{t_end:.3f})'"
         )
         filters.append(f)
@@ -129,7 +195,7 @@ def _build_drawtext_filters(blocks: list[list[dict]], clip_start: float) -> list
     return filters
 
 
-# ── Video geometry ────────────────────────────────────────────────
+# -- Video geometry ------------------------------------------------------------
 
 def _probe_dimensions(video_path: str) -> tuple[int, int]:
     cmd = [
@@ -144,23 +210,49 @@ def _probe_dimensions(video_path: str) -> tuple[int, int]:
     return int(w), int(h)
 
 
-def _build_crop_scale(src_w: int, src_h: int) -> str:
-    src_ratio = src_w / src_h
-    target_ratio = TARGET_W / TARGET_H  # 0.5625
+def _build_crop_scale(
+    src_w: int, src_h: int,
+    target_w: int, target_h: int,
+    fmt: str,
+) -> str:
+    if fmt == "original":
+        return f"scale={target_w}:{target_h}"
 
+    src_ratio = src_w / src_h
+    target_ratio = target_w / target_h
+
+    if fmt == "landscape_blur":
+        # Always use blur-pad style regardless of source aspect ratio
+        if src_ratio > target_ratio:
+            # Source wider than target — scale to fit width, blur-pad top/bottom
+            scale_h = int(target_w / src_ratio)
+            pad_y = (target_h - scale_h) // 2
+            return (
+                f"split[orig][blur];"
+                f"[blur]scale={target_w}:{target_h},boxblur=20:5[bg];"
+                f"[orig]scale={target_w}:{scale_h}[fg];"
+                f"[bg][fg]overlay=0:{pad_y}"
+            )
+        else:
+            scale_w = int(target_h * src_ratio)
+            pad_x = (target_w - scale_w) // 2
+            return (
+                f"split[orig][blur];"
+                f"[blur]scale={target_w}:{target_h},boxblur=20:5[bg];"
+                f"[orig]scale={scale_w}:{target_h}[fg];"
+                f"[bg][fg]overlay={pad_x}:0"
+            )
+
+    # portrait / square — center crop
     if src_ratio > target_ratio:
-        # Landscape → crop sides to get 9:16
+        # Source wider → crop sides
         crop_h = src_h
         crop_w = int(src_h * target_ratio)
         crop_x = (src_w - crop_w) // 2
-        return f"crop={crop_w}:{crop_h}:{crop_x}:0,scale={TARGET_W}:{TARGET_H}"
+        return f"crop={crop_w}:{crop_h}:{crop_x}:0,scale={target_w}:{target_h}"
     else:
-        # Portrait / square → blur-pad top and bottom
-        scale_h = int(TARGET_W / src_ratio)
-        pad_y = (TARGET_H - scale_h) // 2
-        return (
-            f"split[orig][blur];"
-            f"[blur]scale={TARGET_W}:{TARGET_H},boxblur=20:5[bg];"
-            f"[orig]scale={TARGET_W}:{scale_h}[fg];"
-            f"[bg][fg]overlay=0:{pad_y}"
-        )
+        # Source taller → crop top/bottom
+        crop_w = src_w
+        crop_h = int(src_w / target_ratio)
+        crop_y = (src_h - crop_h) // 2
+        return f"crop={crop_w}:{crop_h}:0:{crop_y},scale={target_w}:{target_h}"

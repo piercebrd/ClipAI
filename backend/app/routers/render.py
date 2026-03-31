@@ -66,6 +66,8 @@ def _run_render(render_id: str, job_id: str, clips_input: list, job: dict):
             "end": ci.end,
             "title": base.get("title", "clip"),
             "subtitles": base.get("subtitles", []),
+            "format": ci.format,
+            "subtitle_style": ci.subtitle_style,
         })
 
     done = []
@@ -74,7 +76,7 @@ def _run_render(render_id: str, job_id: str, clips_input: list, job: dict):
     for i, clip in enumerate(clips_to_render):
         try:
             _render_jobs[render_id]["message"] = f"Rendering clip {i+1}/{total}: {clip['title']}"
-            out = render_clip(job_id, clip)
+            out = render_clip(job_id, clip, fmt=clip.get("format", "portrait"), subtitle_style=clip.get("subtitle_style", "tiktok"))
             done.append(out)
             _renders[render_id].append(out)
             _render_jobs[render_id]["progress"] = int((i + 1) / total * 100)

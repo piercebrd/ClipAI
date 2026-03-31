@@ -1,4 +1,5 @@
 import json
+import time
 import uuid
 import httpx
 
@@ -6,7 +7,6 @@ from app.config import ANTHROPIC_API_KEY
 
 CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
 MODEL = "claude-sonnet-4-6"
-MAX_CLIP_DURATION = 90.0
 
 
 def _build_transcript_text(words: list[dict]) -> str:
@@ -30,19 +30,33 @@ def _build_transcript_text(words: list[dict]) -> str:
     return " ".join(lines)
 
 
-def _build_prompt(transcript: str, duration: float, title: str) -> str:
+def _build_prompt(
+    transcript: str,
+    duration: float,
+    title: str,
+    user_prompt: str | None = None,
+    min_duration: int = 15,
+    max_duration: int = 90,
+) -> str:
+    user_section = ""
+    if user_prompt:
+        user_section = f"""
+User instructions (IMPORTANT — follow these closely):
+{user_prompt}
+"""
+
     return f"""You are an expert viral content editor specializing in TikTok and Instagram Reels.
 
 Analyze this YouTube video transcript and identify the 5 to 10 most viral-worthy moments.
 
 Video title: {title}
 Total duration: {int(duration)} seconds ({int(duration // 60)}m{int(duration % 60)}s)
-
+{user_section}
 Transcript with timestamps:
 {transcript}
 
 Rules:
-- Each clip must be between 15 and {int(MAX_CLIP_DURATION)} seconds long
+- Each clip must be between {min_duration} and {max_duration} seconds long
 - Distribute clips across the ENTIRE video, not just the beginning
 - Prioritize moments with: strong hooks, surprising insights, emotional peaks, clear stories, or actionable tips
 - The "start" and "end" must match actual words in the transcript timestamps
@@ -62,13 +76,20 @@ Return ONLY a valid JSON array (no markdown, no explanation) in this exact forma
 type must be one of: hook | insight | story | highlight"""
 
 
-def analyze_transcript(words: list[dict], duration: float, title: str) -> list[dict]:
+def analyze_transcript(
+    words: list[dict],
+    duration: float,
+    title: str,
+    user_prompt: str | None = None,
+    min_duration: int = 15,
+    max_duration: int = 90,
+) -> list[dict]:
     """
     Send transcript to Claude API and get back a list of viral clip candidates.
     Returns a list of clip dicts with id, title, start, end, type, score, reason, subtitles.
     """
     transcript = _build_transcript_text(words)
-    prompt = _build_prompt(transcript, duration, title)
+    prompt = _build_prompt(transcript, duration, title, user_prompt, min_duration, max_duration)
 
     headers = {
         "x-api-key": ANTHROPIC_API_KEY,
@@ -82,9 +103,15 @@ def analyze_transcript(words: list[dict], duration: float, title: str) -> list[d
         "messages": [{"role": "user", "content": prompt}],
     }
 
-    with httpx.Client(timeout=60) as client:
-        response = client.post(CLAUDE_API_URL, headers=headers, json=payload)
-        response.raise_for_status()
+    max_retries = 5
+    with httpx.Client(timeout=120) as client:
+        for attempt in range(max_retries):
+            response = client.post(CLAUDE_API_URL, headers=headers, json=payload)
+            if response.status_code in (429, 529) and attempt < max_retries - 1:
+                time.sleep(2 ** attempt * 10)  # 10s, 20s, 40s, 80s
+                continue
+            response.raise_for_status()
+            break
 
     raw = response.json()["content"][0]["text"].strip()
 
@@ -102,9 +129,9 @@ def analyze_transcript(words: list[dict], duration: float, title: str) -> list[d
         start = float(c["start"])
         end = float(c["end"])
 
-        # Clamp duration to 90s max
-        if end - start > MAX_CLIP_DURATION:
-            end = start + MAX_CLIP_DURATION
+        # Clamp duration to max
+        if end - start > max_duration:
+            end = start + max_duration
 
         # Attach word-level subtitles for this clip's time range
         subtitles = [
