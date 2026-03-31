@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 import uuid
@@ -5,15 +6,24 @@ import yt_dlp
 
 from app.config import TEMP_DIR, MAX_VIDEO_DURATION, YTDLP_COOKIES_FROM_BROWSER
 
-COOKIES_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cookies.txt")
+logger = logging.getLogger(__name__)
+
+COOKIES_FILE = "/tmp/yt_cookies.txt"
 
 
 def _write_cookies_from_env():
     """Write YTDLP_COOKIES env var content to a file for yt-dlp."""
     raw = os.getenv("YTDLP_COOKIES", "")
-    if raw and not os.path.exists(COOKIES_FILE):
-        with open(COOKIES_FILE, "w") as f:
-            f.write(raw)
+    if not raw:
+        logger.warning("YTDLP_COOKIES env var is empty")
+        return
+    # Render may escape newlines as literal \n
+    if "\\n" in raw and "\n" not in raw.replace("\\n", ""):
+        raw = raw.replace("\\n", "\n")
+    with open(COOKIES_FILE, "w") as f:
+        f.write(raw)
+    lines = [l for l in raw.strip().splitlines() if l and not l.startswith("#")]
+    logger.info("Wrote cookies file: %s (%d cookie lines)", COOKIES_FILE, len(lines))
 
 def _ensure_node_in_path() -> None:
     """Add Node.js to PATH if not already accessible (needed for yt-dlp EJS solver)."""
@@ -41,9 +51,12 @@ def _cookies_opt() -> dict:
     """Return yt-dlp cookies option depending on available config."""
     _write_cookies_from_env()
     if os.path.exists(COOKIES_FILE):
+        logger.info("Using cookies file: %s (size=%d)", COOKIES_FILE, os.path.getsize(COOKIES_FILE))
         return {"cookiefile": COOKIES_FILE}
     if YTDLP_COOKIES_FROM_BROWSER:
+        logger.info("Using browser cookies: %s", YTDLP_COOKIES_FROM_BROWSER)
         return {"cookiesfrombrowser": (YTDLP_COOKIES_FROM_BROWSER,)}
+    logger.warning("No cookies configured — YouTube may block downloads")
     return {}
 
 
