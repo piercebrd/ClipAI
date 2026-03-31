@@ -8,8 +8,13 @@ from app.config import CORS_ORIGIN
 from app.routers import health, analyze, render
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="ClipAI", version="0.1.0")
+
+# Write YouTube cookies file at startup from env var
+from app.services.downloader import _write_cookies_from_env
+_write_cookies_from_env()
 
 
 @app.get("/debug/cookies")
@@ -21,9 +26,6 @@ def debug_cookies():
     file_size = os.path.getsize(cookies_file) if file_exists else 0
     return {
         "env_var_length": len(raw),
-        "env_var_has_newlines": "\n" in raw,
-        "env_var_has_escaped_newlines": "\\n" in raw,
-        "env_var_first_50_chars": raw[:50] if raw else "(empty)",
         "file_exists": file_exists,
         "file_size": file_size,
     }
