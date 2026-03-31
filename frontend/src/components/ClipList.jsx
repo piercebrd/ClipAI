@@ -25,6 +25,7 @@ function ClipCard({ clip, jobId }) {
   const [renderState, setRenderState] = useState('idle') // idle | loading | rendering | done | error
   const [downloadUrl, setDownloadUrl] = useState(null)
   const [errorMsg, setErrorMsg] = useState(null)
+  const [progress, setProgress] = useState(0)
 
   const typeClass = TYPE_COLORS[clip.type] || 'bg-gray-500/20 text-gray-300 border-gray-500/30'
   const duration = Math.round(clip.end - clip.start)
@@ -54,7 +55,7 @@ function ClipCard({ clip, jobId }) {
   }
 
   async function pollRender(renderId, clipId) {
-    const MAX = 120
+    const MAX = 600
     let elapsed = 0
 
     while (elapsed < MAX) {
@@ -64,6 +65,8 @@ function ClipCard({ clip, jobId }) {
       const res = await fetch(`/render/status/${renderId}`)
       if (!res.ok) continue
       const data = await res.json()
+
+      if (data.progress != null) setProgress(data.progress)
 
       if (data.step === 'done') {
         setDownloadUrl(`/download/${renderId}/${clipId}`)
@@ -115,7 +118,15 @@ function ClipCard({ clip, jobId }) {
           <span className="text-sm text-gray-400">Lancement du rendu...</span>
         )}
         {renderState === 'rendering' && (
-          <span className="text-sm text-purple-400 animate-pulse">Rendu en cours...</span>
+          <div className="space-y-1">
+            <span className="text-sm text-purple-400 animate-pulse">Rendu en cours... {progress > 0 ? `${progress}%` : ''}</span>
+            <div className="w-full bg-white/10 rounded-full h-1.5">
+              <div
+                className="bg-purple-500 h-1.5 rounded-full transition-all duration-500"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
         )}
         {renderState === 'done' && (
           <a
