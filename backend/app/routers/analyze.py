@@ -15,7 +15,10 @@ router = APIRouter()
 async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
     job_id = str(uuid.uuid4())
     create_job(job_id)
-    background_tasks.add_task(_run_pipeline, job_id, request.url)
+    background_tasks.add_task(
+        _run_pipeline, job_id, request.url,
+        request.prompt, request.min_duration, request.max_duration,
+    )
     return AnalyzeResponse(job_id=job_id, clips=[])
 
 
@@ -27,7 +30,12 @@ async def status(job_id: str):
     return {"job_id": job_id, **job}
 
 
-def _run_pipeline(job_id: str, url: str):
+def _run_pipeline(
+    job_id: str, url: str,
+    user_prompt: str | None = None,
+    min_duration: int = 15,
+    max_duration: int = 90,
+):
     try:
         # Step 1 — Download
         update_job(job_id, step="downloading", progress=10, message="Downloading video...")
@@ -57,7 +65,10 @@ def _run_pipeline(job_id: str, url: str):
 
         # Step 3 — Claude analysis
         update_job(job_id, step="analyzing", progress=70, message="Analyzing with Claude...")
-        clips = analyze_transcript(words, result["duration"], result["title"])
+        clips = analyze_transcript(
+            words, result["duration"], result["title"],
+            user_prompt, min_duration, max_duration,
+        )
         update_job(
             job_id, step="analyzed", progress=90,
             message=f"Found {len(clips)} viral clips",

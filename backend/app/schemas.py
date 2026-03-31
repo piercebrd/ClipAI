@@ -1,8 +1,13 @@
+from typing import Literal
+
 from pydantic import BaseModel
 
 
 class AnalyzeRequest(BaseModel):
     url: str
+    prompt: str | None = None
+    min_duration: int = 15
+    max_duration: int = 90
 
 
 class WordSchema(BaseModel):
@@ -31,6 +36,8 @@ class RenderClipInput(BaseModel):
     id: str
     start: float
     end: float
+    format: Literal["portrait", "landscape_blur", "square", "original"] = "portrait"
+    subtitle_style: Literal["tiktok", "minimal", "none"] = "tiktok"
 
 
 class RenderRequest(BaseModel):

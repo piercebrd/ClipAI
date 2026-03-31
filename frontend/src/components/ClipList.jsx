@@ -8,6 +8,19 @@ const TYPE_COLORS = {
   emotional: 'bg-red-500/20 text-red-300 border-red-500/30',
 }
 
+const FORMAT_OPTIONS = [
+  { value: 'portrait', label: 'Portrait 9:16' },
+  { value: 'landscape_blur', label: 'Paysage flou' },
+  { value: 'square', label: 'Carré 1:1' },
+  { value: 'original', label: 'Original' },
+]
+
+const SUBTITLE_OPTIONS = [
+  { value: 'tiktok', label: 'TikTok' },
+  { value: 'minimal', label: 'Minimal' },
+  { value: 'none', label: 'Sans' },
+]
+
 function formatTime(s) {
   const m = Math.floor(s / 60)
   const sec = Math.round(s % 60)
@@ -26,6 +39,8 @@ function ClipCard({ clip, jobId }) {
   const [downloadUrl, setDownloadUrl] = useState(null)
   const [errorMsg, setErrorMsg] = useState(null)
   const [progress, setProgress] = useState(0)
+  const [format, setFormat] = useState('portrait')
+  const [subtitleStyle, setSubtitleStyle] = useState('tiktok')
 
   const typeClass = TYPE_COLORS[clip.type] || 'bg-gray-500/20 text-gray-300 border-gray-500/30'
   const duration = Math.round(clip.end - clip.start)
@@ -33,6 +48,7 @@ function ClipCard({ clip, jobId }) {
   async function handleRender() {
     setRenderState('loading')
     setErrorMsg(null)
+    setProgress(0)
 
     try {
       const res = await fetch('/render', {
@@ -40,7 +56,13 @@ function ClipCard({ clip, jobId }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           job_id: jobId,
-          clips: [{ id: clip.id, start: clip.start, end: clip.end }],
+          clips: [{
+            id: clip.id,
+            start: clip.start,
+            end: clip.end,
+            format,
+            subtitle_style: subtitleStyle,
+          }],
         }),
       })
       if (!res.ok) throw new Error(`Erreur ${res.status}`)
@@ -107,12 +129,40 @@ function ClipCard({ clip, jobId }) {
       {/* Action */}
       <div className="pt-1">
         {renderState === 'idle' && (
-          <button
-            onClick={handleRender}
-            className="text-sm bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg transition"
-          >
-            Exporter 9:16
-          </button>
+          <div className="space-y-3">
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="block text-xs text-gray-500 mb-1">Format</label>
+                <select
+                  value={format}
+                  onChange={(e) => setFormat(e.target.value)}
+                  className="w-full bg-white/5 border border-white/15 rounded-lg px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-purple-500"
+                >
+                  {FORMAT_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs text-gray-500 mb-1">Sous-titres</label>
+                <select
+                  value={subtitleStyle}
+                  onChange={(e) => setSubtitleStyle(e.target.value)}
+                  className="w-full bg-white/5 border border-white/15 rounded-lg px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-purple-500"
+                >
+                  {SUBTITLE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <button
+              onClick={handleRender}
+              className="text-sm bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg transition"
+            >
+              Exporter
+            </button>
+          </div>
         )}
         {renderState === 'loading' && (
           <span className="text-sm text-gray-400">Lancement du rendu...</span>
@@ -129,13 +179,21 @@ function ClipCard({ clip, jobId }) {
           </div>
         )}
         {renderState === 'done' && (
-          <a
-            href={downloadUrl}
-            download={`${clip.id}.mp4`}
-            className="inline-block text-sm bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg transition"
-          >
-            Télécharger MP4
-          </a>
+          <div className="flex items-center gap-3">
+            <a
+              href={downloadUrl}
+              download={`${clip.id}.mp4`}
+              className="inline-block text-sm bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg transition"
+            >
+              Télécharger MP4
+            </a>
+            <button
+              onClick={() => { setRenderState('idle'); setDownloadUrl(null) }}
+              className="text-xs text-gray-500 hover:text-gray-300 transition"
+            >
+              Re-exporter
+            </button>
+          </div>
         )}
         {renderState === 'error' && (
           <div>
