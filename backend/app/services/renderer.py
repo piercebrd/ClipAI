@@ -76,8 +76,10 @@ def render_clip(
     vf_parts = [crop_scale]
     if subtitle_style != "none" and _has_drawtext():
         style = SUBTITLE_STYLES[subtitle_style]
-        blocks = _group_words(subtitles, min_words=5, max_words=8)
-        drawtext_filters = _build_drawtext_filters(blocks, start, target_h, style)
+        blocks = _group_words(subtitles, min_words=3, max_words=5)
+        # For landscape_blur, compute where the video actually sits
+        sub_y = _compute_subtitle_y(src_w, src_h, target_w, target_h, fmt, style)
+        drawtext_filters = _build_drawtext_filters(blocks, start, target_w, sub_y, style)
         vf_parts += drawtext_filters
 
     vf = ",".join(vf_parts)
@@ -133,15 +135,33 @@ def _group_words(words: list[dict], min_words: int, max_words: int) -> list[list
     return blocks
 
 
+def _compute_subtitle_y(
+    src_w: int, src_h: int,
+    target_w: int, target_h: int,
+    fmt: str, style: dict,
+) -> int:
+    """Compute subtitle Y position, accounting for video placement in the frame."""
+    if fmt == "landscape_blur":
+        # Video is scaled to fit width, centered vertically
+        src_ratio = src_w / src_h
+        video_h = int(target_w / src_ratio)
+        video_y = (target_h - video_h) // 2
+        # Place subtitles at y_ratio within the VIDEO area, not the full frame
+        return video_y + int(video_h * style["y_ratio"])
+    return int(target_h * style["y_ratio"])
+
+
 def _build_drawtext_filters(
     blocks: list[list[dict]],
     clip_start: float,
-    target_h: int,
+    target_w: int,
+    sub_y: int,
     style: dict,
 ) -> list[str]:
     """Build one drawtext filter per subtitle block."""
     filters = []
-    y = int(target_h * style["y_ratio"])
+    # Clamp fontsize so text doesn't overflow width (roughly 0.6 * fontsize per char)
+    fontsize = min(style["fontsize"], int(target_w / 20))
 
     for block in blocks:
         if not block:
@@ -161,12 +181,12 @@ def _build_drawtext_filters(
         f = (
             f"drawtext="
             f"text='{text_escaped}':"
-            f"fontsize={style['fontsize']}:"
+            f"fontsize={fontsize}:"
             f"fontcolor={style['fontcolor']}:"
             f"shadowcolor={style['shadowcolor']}:"
             f"shadowx={style['shadowx']}:shadowy={style['shadowy']}:"
-            f"x=(w-text_w)/2:"
-            f"y={y}:"
+            f"x=max(10\\,(w-text_w)/2):"
+            f"y={sub_y}:"
             f"box={style['box']}:boxcolor={style['boxcolor']}:boxborderw={style['boxborderw']}:"
             f"enable='between(t\\,{t_start:.3f}\\,{t_end:.3f})'"
         )
