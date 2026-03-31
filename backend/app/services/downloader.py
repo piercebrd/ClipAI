@@ -48,7 +48,7 @@ def download_video(url: str, job_id: str) -> dict:
         "quiet": True,
         "no_warnings": True,
         "match_filter": _duration_filter,
-        "cookiesfrombrowser": (YTDLP_COOKIES_FROM_BROWSER,),
+        **({"cookiesfrombrowser": (YTDLP_COOKIES_FROM_BROWSER,)} if YTDLP_COOKIES_FROM_BROWSER else {}),
         "js_runtimes": {"node": {}, "deno": {}},
         # Extract audio as WAV for Whisper
         "postprocessors": [
