@@ -10,6 +10,15 @@ logger = logging.getLogger(__name__)
 
 COOKIES_FILE = "/tmp/yt_cookies.txt"
 
+# Player client strategies to try in order.
+# Each entry is tried until one succeeds.
+PLAYER_CLIENT_STRATEGIES = [
+    ["mediaconnect"],
+    ["web"],
+    ["android"],
+    ["ios"],
+]
+
 
 def _write_cookies_from_env():
     """Write YTDLP_COOKIES env var content to a file for yt-dlp."""
@@ -60,10 +69,30 @@ def _cookies_opt() -> dict:
     return {}
 
 
+def _oauth_opt() -> dict:
+    """Return yt-dlp OAuth2 options if a cached token exists."""
+    token_path = os.path.expanduser("~/.cache/yt-dlp/youtube-oauth2/token.json")
+    if os.path.exists(token_path):
+        logger.info("OAuth2 token found at %s", token_path)
+        return {"username": "oauth2", "password": ""}
+    return {}
+
+
+def _clean_job_dir(job_dir: str) -> None:
+    """Remove all downloaded files from job_dir to allow retry."""
+    for fname in os.listdir(job_dir):
+        fpath = os.path.join(job_dir, fname)
+        try:
+            os.remove(fpath)
+        except OSError:
+            pass
+
+
 def download_video(url: str, job_id: str) -> dict:
     _ensure_node_in_path()
     """
     Download a YouTube video and extract audio.
+    Retries with different player client strategies on bot-detection errors.
     Returns a dict with:
       - video_path: path to the downloaded video file
       - audio_path: path to the extracted audio (WAV)
@@ -72,45 +101,70 @@ def download_video(url: str, job_id: str) -> dict:
     """
     job_dir = _make_job_dir(job_id)
     video_path = os.path.join(job_dir, "video.mp4")
-    audio_path = os.path.join(job_dir, "audio.wav")
 
-    ydl_opts = {
-        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
-        "outtmpl": video_path,
-        "merge_output_format": "mp4",
-        "quiet": True,
-        "no_warnings": True,
-        "match_filter": _duration_filter,
-        **_cookies_opt(),
-        "extractor_args": {"youtube": {"player_client": ["mediaconnect"]}},
-        "js_runtimes": {"node": {}, "deno": {}},
-        # Extract audio as WAV for Whisper
-        "postprocessors": [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "wav",
-                "preferredquality": "0",
+    cookies = _cookies_opt()
+    oauth = _oauth_opt()
+
+    last_error = None
+
+    for strategy in PLAYER_CLIENT_STRATEGIES:
+        logger.info("Trying player_client=%s for %s", strategy, url)
+        _clean_job_dir(job_dir)
+
+        ydl_opts = {
+            "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+            "outtmpl": video_path,
+            "merge_output_format": "mp4",
+            "quiet": True,
+            "no_warnings": True,
+            "match_filter": _duration_filter,
+            **cookies,
+            **oauth,
+            "extractor_args": {"youtube": {"player_client": strategy}},
+            "js_runtimes": {"node": {}, "deno": {}},
+            # Extract audio as WAV for Whisper
+            "postprocessors": [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "wav",
+                    "preferredquality": "0",
+                }
+            ],
+            "postprocessor_args": ["-ar", "16000", "-ac", "1"],
+            "keepvideo": True,
+            "paths": {"home": job_dir},
+        }
+
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                duration = info.get("duration", 0)
+                title = info.get("title", "video")
+
+            audio_path = _find_audio_file(job_dir)
+
+            logger.info("Download succeeded with player_client=%s", strategy)
+            return {
+                "video_path": video_path,
+                "audio_path": audio_path,
+                "duration": duration,
+                "title": title,
             }
-        ],
-        "postprocessor_args": ["-ar", "16000", "-ac", "1"],
-        "keepvideo": True,
-        "paths": {"home": job_dir},
-    }
+        except yt_dlp.utils.DownloadError as e:
+            last_error = e
+            error_msg = str(e).lower()
+            if "sign in" in error_msg or "bot" in error_msg or "confirm" in error_msg:
+                logger.warning(
+                    "Bot detection with player_client=%s, trying next strategy...",
+                    strategy,
+                )
+                continue
+            # Non-bot error — don't retry with other clients
+            raise
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        duration = info.get("duration", 0)
-        title = info.get("title", "video")
-
-    # yt-dlp names the audio file based on the video title — locate it
-    audio_path = _find_audio_file(job_dir)
-
-    return {
-        "video_path": video_path,
-        "audio_path": audio_path,
-        "duration": duration,
-        "title": title,
-    }
+    # All strategies exhausted
+    logger.error("All player client strategies failed for %s", url)
+    raise last_error
 
 
 def _duration_filter(info_dict, *, incomplete):
