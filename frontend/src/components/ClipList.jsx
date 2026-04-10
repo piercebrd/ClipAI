@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Download, RefreshCw, AlertCircle } from 'lucide-react'
 import API_URL from '../api'
 
 const TYPE_COLORS = {
@@ -184,24 +185,29 @@ function ClipCard({ clip, jobId }) {
             <a
               href={downloadUrl}
               download={`${clip.id}.mp4`}
-              className="inline-block text-sm bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg transition"
+              className="inline-flex items-center gap-2 text-sm bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg transition"
             >
+              <Download size={14} />
               Télécharger MP4
             </a>
             <button
               onClick={() => { setRenderState('idle'); setDownloadUrl(null) }}
-              className="text-xs text-gray-500 hover:text-gray-300 transition"
+              className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 transition"
             >
+              <RefreshCw size={12} />
               Re-exporter
             </button>
           </div>
         )}
         {renderState === 'error' && (
           <div>
-            <p className="text-red-400 text-xs mb-1">{errorMsg}</p>
+            <p className="inline-flex items-center gap-1 text-red-400 text-xs mb-1">
+              <AlertCircle size={12} />
+              {errorMsg}
+            </p>
             <button
               onClick={() => setRenderState('idle')}
-              className="text-xs text-gray-500 underline"
+              className="block text-xs text-gray-500 underline"
             >
               Réessayer
             </button>

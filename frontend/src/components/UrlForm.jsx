@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import API_URL from '../api'
 
 export default function UrlForm({ onJobCreated }) {
@@ -106,9 +107,13 @@ export default function UrlForm({ onJobCreated }) {
         <button
           type="button"
           onClick={() => setShowOptions(!showOptions)}
-          className="text-xs text-gray-500 hover:text-gray-300 transition"
+          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 transition"
         >
-          {showOptions ? '▾ Masquer les options' : '▸ Options avancées'}
+          {showOptions ? (
+            <><ChevronDown size={13} /> Masquer les options</>
+          ) : (
+            <><ChevronRight size={13} /> Options avancées</>
+          )}
         </button>
 
         {showOptions && (
